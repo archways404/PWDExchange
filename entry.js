@@ -2,11 +2,16 @@ import axios from 'axios';
 import readline from 'readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import * as openpgp from 'openpgp';
+import clipboard from 'clipboardy';
+
+/*
 import { execFile } from 'child_process';
 import open from 'open';
+*/
 
 const RAW_BASE = 'https://raw.githubusercontent.com/archways404/PWDExchange/master';
 
+/*
 function sendViaOutlook(email, subject, body) {
 	return new Promise((resolve, reject) => {
 		execFile(
@@ -54,6 +59,7 @@ function checkForIncomingPWD() {
 		);
 	});
 }
+  */
 
 async function main() {
 	// Step 1: Download keys.json
@@ -86,6 +92,10 @@ async function main() {
 		encryptionKeys: publicKey,
 	});
 
+	console.log(`\n🔐 Encrypted Message:\n\n${encrypted}\n`);
+
+	/*
+
 	const subject = 'PWDExchange';
 	const body = encrypted;
 
@@ -105,6 +115,21 @@ async function main() {
 
 	// Step 6: Check for any incoming PWD messages
 	await checkForIncomingPWD();
+
+  */
+
+	const tagged = `[#PWDExchange]\n\n${encrypted}`;
+	await clipboard.write(tagged);
+	console.log('\n✅ Encrypted PGP message copied to clipboard.');
+	console.log(`💬 Paste it into a Teams chat with ${selectedEmail}.\n`);
+
+	// Try to open Microsoft Teams
+	try {
+		await open(`msteams:/l/chat/0/0?users=${encodeURIComponent(selectedEmail)}`);
+		console.log('🚀 Opening Microsoft Teams...');
+	} catch (err) {
+		console.warn('⚠️ Could not launch Teams (is it installed and associated with msteams: URI?)');
+	}
 }
 
 main();
