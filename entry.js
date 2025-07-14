@@ -56,7 +56,7 @@ async function main() {
 		encryptionKeys: publicKey,
 	});
 
-	const subject = 'Encrypted PGP Message';
+	const subject = 'PWDExchange';
 	const body = encrypted;
 
 	console.log(`\n🔐 Encrypted Message:\n\n${body}\n`);
