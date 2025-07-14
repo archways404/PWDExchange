@@ -25,6 +25,36 @@ function sendViaOutlook(email, subject, body) {
 	});
 }
 
+function checkForIncomingPWD() {
+	return new Promise((resolve, reject) => {
+		execFile(
+			'powershell',
+			['-ExecutionPolicy', 'Bypass', '-File', 'get_pwd_messages.ps1'],
+			(err, stdout, stderr) => {
+				if (err) {
+					console.error('❌ Failed to check inbox:', stderr || err.message);
+					resolve(null);
+				} else {
+					const messages = stdout.trim();
+					if (messages) {
+						console.log('\n📩 Incoming PWD Message(s):\n');
+						console.log(
+							messages
+								.split('---MSG---')
+								.map((m, i) => `#${i + 1}\n${m.trim()}`)
+								.join('\n\n')
+						);
+						resolve(messages);
+					} else {
+						console.log('\n📭 No new PWDExchange messages.');
+						resolve(null);
+					}
+				}
+			}
+		);
+	});
+}
+
 async function main() {
 	// Step 1: Download keys.json
 	const jsonUrl = `${RAW_BASE}/keys/KeyMap.json`;
@@ -72,6 +102,9 @@ async function main() {
 			)}`
 		);
 	}
+
+	// Step 6: Check for any incoming PWD messages
+	await checkForIncomingPWD();
 }
 
 main();
