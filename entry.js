@@ -2,8 +2,28 @@ import axios from 'axios';
 import readline from 'readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import * as openpgp from 'openpgp';
+import { execFile } from 'child_process';
+import open from 'open';
 
 const RAW_BASE = 'https://raw.githubusercontent.com/archways404/PWDExchange/master';
+
+function sendViaOutlook(email, subject, body) {
+	return new Promise((resolve, reject) => {
+		execFile(
+			'powershell',
+			['-ExecutionPolicy', 'Bypass', '-File', 'send_mail.ps1', email, subject, body],
+			(err, stdout, stderr) => {
+				if (err) {
+					console.error('❌ Failed to send via Outlook:', stderr || err.message);
+					reject(err);
+				} else {
+					console.log('✅ Email sent via Outlook!');
+					resolve();
+				}
+			}
+		);
+	});
+}
 
 async function main() {
 	// Step 1: Download keys.json
@@ -24,7 +44,7 @@ async function main() {
 
 	const selectedEmail = emails[Number(index)];
 	const keyFile = keyMap[selectedEmail];
-	const keyUrl = `${RAW_BASE}/${keyFile}`;
+	const keyUrl = `${RAW_BASE}/keys/${keyFile}`;
 
 	// Step 3: Download selected .asc key
 	const { data: armoredKey } = await axios.get(keyUrl);
@@ -36,7 +56,22 @@ async function main() {
 		encryptionKeys: publicKey,
 	});
 
-	console.log(`\n🔐 Encrypted Message:\n\n${encrypted}`);
+	const subject = 'Encrypted PGP Message';
+	const body = encrypted;
+
+	console.log(`\n🔐 Encrypted Message:\n\n${body}\n`);
+
+	// Step 5: Try sending via Outlook → fallback to mailto
+	try {
+		await sendViaOutlook(selectedEmail, subject, body);
+	} catch (err) {
+		console.log('📨 Falling back to default mail client...');
+		open(
+			`mailto:${selectedEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(
+				body
+			)}`
+		);
+	}
 }
 
 main();
