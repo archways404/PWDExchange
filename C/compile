@@ -1,0 +1,8 @@
+gcc -o client client.c -I/opt/homebrew/include -L/opt/homebrew/lib -lcurl -ljansson -lgpgme
+
+gcc -o admin admin.c -I/opt/homebrew/include -L/opt/homebrew/lib -lcurl -ljansson -lgpgme
+
+
+./client --debug
+
+./admin --debug
