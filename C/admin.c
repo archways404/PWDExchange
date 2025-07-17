@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <termios.h>
 #include <unistd.h>
 
 #define ONEDRIVE_PATH "/Users/archways404/Downloads/PWDExchange_private.asc.gpg"
@@ -18,22 +19,30 @@ int file_exists(const char *path) { return access(path, F_OK) != -1; }
 
 void prompt_passphrase(char *buffer, size_t len) {
   printf("Enter passphrase: ");
+  fflush(stdout);
+
+  struct termios oldt, newt;
+  tcgetattr(STDIN_FILENO, &oldt);
+  newt = oldt;
+  newt.c_lflag &= ~(ECHO);
+  tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+
   if (fgets(buffer, len, stdin)) {
     buffer[strcspn(buffer, "\n")] = 0;
   }
+
+  tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+  printf("\n");
 }
 
 void paste_and_decrypt_loop(gpgme_ctx_t ctx) {
   char message[8192] = {0};
-  char *ptr = message;
-  size_t remaining = sizeof(message);
 
   while (1) {
     printf("\nPaste full PGP message (end with '-----END PGP MESSAGE-----') or "
            "type 'exit'\n> ");
-
-    ptr = message;
-    remaining = sizeof(message);
+    char *ptr = message;
+    size_t remaining = sizeof(message);
     int complete = 0;
 
     while (fgets(ptr, remaining, stdin)) {
@@ -74,6 +83,15 @@ void paste_and_decrypt_loop(gpgme_ctx_t ctx) {
       gpgme_data_read(plain, out, n);
       out[n] = '\0';
       printf("[RESULT] %s\n", out);
+
+      FILE *clip = popen("pbcopy", "w");
+      if (clip) {
+        fwrite(out, 1, strlen(out), clip);
+        pclose(clip);
+        printf("[INFO] Decrypted message copied to clipboard.\n");
+      } else {
+        fprintf(stderr, "[WARN] Failed to copy to clipboard.\n");
+      }
     }
 
     gpgme_data_release(cipher);
@@ -124,8 +142,10 @@ int main() {
              TEMP_GNUPGHOME, TEMP_KEY_FILE);
     system(cmd);
 
-    paste_and_decrypt_loop(ctx);
+    // 🔥 Auto-delete decrypted key
+    remove(TEMP_KEY_FILE);
 
+    paste_and_decrypt_loop(ctx);
   } else {
     printf("[WARN] No key found at %s\n", ONEDRIVE_PATH);
     printf("Would you like to generate a new key? (y/n): ");
@@ -141,11 +161,8 @@ int main() {
       fgets(email, sizeof(email), stdin);
       email[strcspn(email, "\n")] = 0;
 
-      printf("Choose passphrase for private key: ");
-      fgets(passphrase, sizeof(passphrase), stdin);
-      passphrase[strcspn(passphrase, "\n")] = 0;
+      prompt_passphrase(passphrase, sizeof(passphrase));
 
-      // Delete existing key if already present
       char cmd[1024];
       snprintf(cmd, sizeof(cmd),
                "gpg --batch --yes --quiet --pinentry-mode loopback "
@@ -158,7 +175,6 @@ int main() {
                name, email);
       system(cmd);
 
-      // Generate new key
       snprintf(cmd, sizeof(cmd),
                "gpg --batch --yes --quiet --pinentry-mode loopback "
                "--passphrase '%s' "
@@ -169,7 +185,6 @@ int main() {
         return 1;
       }
 
-      // Export public key
       snprintf(cmd, sizeof(cmd),
                "gpg --batch --quiet --pinentry-mode loopback --output %s "
                "--armor --export %s",
@@ -177,14 +192,12 @@ int main() {
       system(cmd);
       printf("[INFO] Public key saved to: %s\n", DOWNLOAD_PATH);
 
-      // Export private key to temp file
       snprintf(cmd, sizeof(cmd),
                "gpg --batch --quiet --pinentry-mode loopback --output %s "
                "--armor --export-secret-keys %s",
                TEMP_KEY_FILE, email);
       system(cmd);
 
-      // Encrypt private key
       snprintf(cmd, sizeof(cmd),
                "gpg --batch --yes --quiet --pinentry-mode loopback "
                "--passphrase '%s' "
@@ -194,6 +207,9 @@ int main() {
 
       printf("[SUCCESS] Encrypted private key saved to: %s\n",
              ENCRYPTED_KEY_FILE);
+
+      // Clean up temp file after encryption
+      remove(TEMP_KEY_FILE);
     } else {
       printf("Exiting...\n");
     }
