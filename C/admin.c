@@ -5,9 +5,12 @@
 #include <string.h>
 #include <unistd.h>
 
-#define ONEDRIVE_PATH "/home/sandbox/OneDrive/PWDExchange.asc.gpg"
-#define DOWNLOAD_PATH "/home/sandbox/Downloads/PWDExchange_public.asc"
+#define ONEDRIVE_PATH "/Users/archways404/Downloads/PWDExchange_private.asc.gpg"
+#define DOWNLOAD_PATH "/Users/archways404/Downloads/PWDExchange_public.asc"
 #define TEMP_KEY_FILE "/tmp/PWDExchange_private.asc"
+#define TEMP_GNUPGHOME "/tmp/pgp_admin_keyring"
+#define ENCRYPTED_KEY_FILE                                                     \
+  "/Users/archways404/Downloads/PWDExchange_private.asc.gpg"
 
 void print_intro() { printf("\n[ PWDExchange Decryptor ]\n\n"); }
 
@@ -20,7 +23,7 @@ void prompt_passphrase(char *buffer, size_t len) {
   }
 }
 
-void paste_and_decrypt_loop() {
+void paste_and_decrypt_loop(gpgme_ctx_t ctx) {
   char buffer[8192];
   while (1) {
     printf("\nPaste PGP message (or 'exit' to quit):\n> ");
@@ -29,15 +32,46 @@ void paste_and_decrypt_loop() {
     if (strncmp(buffer, "exit", 4) == 0)
       break;
 
-    // TODO: decrypt using GPGME
-    printf("[INFO] Decrypting...\n");
-    // Decryption placeholder
-    printf("[RESULT] Decryption feature not implemented yet.\n");
+    gpgme_data_t cipher, plain;
+    gpgme_data_new_from_mem(&cipher, buffer, strlen(buffer), 0);
+    gpgme_data_new(&plain);
+
+    gpgme_error_t err = gpgme_op_decrypt(ctx, cipher, plain);
+    if (err) {
+      fprintf(stderr, "[ERROR] Decryption failed: %s\n", gpgme_strerror(err));
+    } else {
+      char out[8192];
+      size_t n = gpgme_data_seek(plain, 0, SEEK_END);
+      gpgme_data_seek(plain, 0, SEEK_SET);
+      gpgme_data_read(plain, out, n);
+      out[n] = '\0';
+      printf("[RESULT] %s\n", out);
+    }
+
+    gpgme_data_release(cipher);
+    gpgme_data_release(plain);
   }
 }
 
 int main() {
   print_intro();
+
+  setenv("GNUPGHOME", TEMP_GNUPGHOME, 1);
+  system("rm -rf " TEMP_GNUPGHOME);
+  system("mkdir -p " TEMP_GNUPGHOME);
+  system("chmod 700 " TEMP_GNUPGHOME);
+
+  gpgme_check_version(NULL);
+  gpgme_ctx_t ctx;
+  gpgme_error_t err = gpgme_new(&ctx);
+  if (err) {
+    fprintf(stderr, "[ERROR] Failed to create GPG context: %s\n",
+            gpgme_strerror(err));
+    return 1;
+  }
+
+  gpgme_set_armor(ctx, 1);
+  gpgme_set_pinentry_mode(ctx, GPGME_PINENTRY_MODE_LOOPBACK);
 
   if (file_exists(ONEDRIVE_PATH)) {
     printf("[INFO] Found encrypted private key at: %s\n", ONEDRIVE_PATH);
@@ -45,19 +79,23 @@ int main() {
     prompt_passphrase(passphrase, sizeof(passphrase));
 
     char cmd[1024];
-    snprintf(cmd, sizeof(cmd),
-             "gpg --batch --yes --quiet --passphrase " % s " -o " / tmp /
-                 PWDExchange_private.asc " -d " % s "",
-             passphrase, ONEDRIVE_PATH);
-    int result = system(cmd);
-    if (result != 0) {
+    snprintf(
+        cmd, sizeof(cmd),
+        "gpg --batch --yes --quiet --pinentry-mode loopback --passphrase '%s' "
+        "-o %s -d %s",
+        passphrase, TEMP_KEY_FILE, ONEDRIVE_PATH);
+    if (system(cmd) != 0) {
       fprintf(stderr, "[ERROR] Failed to decrypt private key.\n");
       return 1;
     }
     printf("[SUCCESS] Decrypted private key.\n");
 
-    // TODO: load into GPGME session and decrypt messages
-    paste_and_decrypt_loop();
+    snprintf(cmd, sizeof(cmd),
+             "gpg --batch --quiet --pinentry-mode loopback --import %s",
+             TEMP_KEY_FILE);
+    system(cmd);
+
+    paste_and_decrypt_loop(ctx);
 
   } else {
     printf("[WARN] No key found at %s\n", ONEDRIVE_PATH);
@@ -78,42 +116,61 @@ int main() {
       fgets(passphrase, sizeof(passphrase), stdin);
       passphrase[strcspn(passphrase, "\n")] = 0;
 
-      char gen_cmd[1024];
-            snprintf(gen_cmd, sizeof(gen_cmd),
-                     "gpg --batch --yes --quiet --passphrase "%s" "
-                     "--quick-generate-key "%s <%s>" default default 1y",
-                     passphrase, name, email);
-        if (system(gen_cmd) != 0) {
-          fprintf(stderr, "[ERROR] Failed to generate key.\n");
-          return 1;
-        }
+      // Delete existing key if already present
+      char cmd[1024];
+      snprintf(cmd, sizeof(cmd),
+               "gpg --batch --yes --quiet --pinentry-mode loopback "
+               "--delete-secret-keys '%s <%s>'",
+               name, email);
+      system(cmd);
+      snprintf(cmd, sizeof(cmd),
+               "gpg --batch --yes --quiet --pinentry-mode loopback "
+               "--delete-keys '%s <%s>'",
+               name, email);
+      system(cmd);
 
-        snprintf(gen_cmd, sizeof(gen_cmd),
-                 "gpg --output " / home / sandbox / Downloads /
-                     PWDExchange_public.asc " --armor --export " % s "",
-                 email);
-        system(gen_cmd);
-        printf("[INFO] Public key saved to: "
-               "/home/sandbox/Downloads/PWDExchange_public.asc\n");
+      // Generate new key
+      snprintf(cmd, sizeof(cmd),
+               "gpg --batch --yes --quiet --pinentry-mode loopback "
+               "--passphrase '%s' "
+               "--quick-generate-key '%s <%s>' default default 1y",
+               passphrase, name, email);
+      if (system(cmd) != 0) {
+        fprintf(stderr, "[ERROR] Failed to generate key.\n");
+        return 1;
+      }
 
-        snprintf(gen_cmd, sizeof(gen_cmd),
-                 "gpg --output " / tmp /
-                     PWDExchange_private.asc " --armor --export-secret-keys " %
-                     s "",
-                 email);
-        system(gen_cmd);
+      // Export public key
+      snprintf(cmd, sizeof(cmd),
+               "gpg --batch --quiet --pinentry-mode loopback --output %s "
+               "--armor --export %s",
+               DOWNLOAD_PATH, email);
+      system(cmd);
+      printf("[INFO] Public key saved to: %s\n", DOWNLOAD_PATH);
 
-        snprintf(gen_cmd, sizeof(gen_cmd),
-                 "gpg -c --cipher-algo AES256 --output " / home / sandbox /
-                     OneDrive / PWDExchange.asc.gpg " " / tmp /
-                     PWDExchange_private.asc "");
-        system(gen_cmd);
+      // Export private key to temp file
+      snprintf(cmd, sizeof(cmd),
+               "gpg --batch --quiet --pinentry-mode loopback --output %s "
+               "--armor --export-secret-keys %s",
+               TEMP_KEY_FILE, email);
+      system(cmd);
 
-        printf("[SUCCESS] Encrypted private key saved to OneDrive.\n");
-        } else {
-        printf("Exiting...\n");
-        }
+      // Encrypt private key
+      snprintf(cmd, sizeof(cmd),
+               "gpg --batch --yes --quiet --pinentry-mode loopback "
+               "--passphrase '%s' "
+               "-c --cipher-algo AES256 --output %s %s",
+               passphrase, ENCRYPTED_KEY_FILE, TEMP_KEY_FILE);
+      system(cmd);
+
+      printf("[SUCCESS] Encrypted private key saved to: %s\n",
+             ENCRYPTED_KEY_FILE);
+    } else {
+      printf("Exiting...\n");
     }
-
-    return 0;
   }
+
+  gpgme_release(ctx);
+  system("rm -rf " TEMP_GNUPGHOME);
+  return 0;
+}
