@@ -102,22 +102,13 @@ void paste_and_decrypt_loop(gpgme_ctx_t ctx) {
 int main() {
   print_intro();
 
+  // Setup isolated keyring
   setenv("GNUPGHOME", TEMP_GNUPGHOME, 1);
   system("rm -rf " TEMP_GNUPGHOME);
   system("mkdir -p " TEMP_GNUPGHOME);
   system("chmod 700 " TEMP_GNUPGHOME);
 
   gpgme_check_version(NULL);
-  gpgme_ctx_t ctx;
-  gpgme_error_t err = gpgme_new(&ctx);
-  if (err) {
-    fprintf(stderr, "[ERROR] Failed to create GPG context: %s\n",
-            gpgme_strerror(err));
-    return 1;
-  }
-
-  gpgme_set_armor(ctx, 1);
-  gpgme_set_pinentry_mode(ctx, GPGME_PINENTRY_MODE_LOOPBACK);
 
   if (file_exists(ONEDRIVE_PATH)) {
     printf("[INFO] Found encrypted private key at: %s\n", ONEDRIVE_PATH);
@@ -145,7 +136,22 @@ int main() {
     // 🔥 Auto-delete decrypted key
     remove(TEMP_KEY_FILE);
 
+    // ✅ Create context AFTER key import
+    gpgme_ctx_t ctx;
+    gpgme_error_t err = gpgme_new(&ctx);
+    if (err) {
+      fprintf(stderr, "[ERROR] Failed to create GPG context: %s\n",
+              gpgme_strerror(err));
+      return 1;
+    }
+
+    gpgme_set_armor(ctx, 1);
+    gpgme_set_pinentry_mode(ctx, GPGME_PINENTRY_MODE_LOOPBACK);
+
     paste_and_decrypt_loop(ctx);
+
+    gpgme_release(ctx);
+    system("rm -rf " TEMP_GNUPGHOME);
   } else {
     printf("[WARN] No key found at %s\n", ONEDRIVE_PATH);
     printf("Would you like to generate a new key? (y/n): ");
@@ -215,7 +221,5 @@ int main() {
     }
   }
 
-  gpgme_release(ctx);
-  system("rm -rf " TEMP_GNUPGHOME);
   return 0;
 }
