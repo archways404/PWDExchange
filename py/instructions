@@ -1,0 +1,3 @@
+pip install pgpy requests pyperclip pyinstaller
+
+pyinstaller --onefile client.py

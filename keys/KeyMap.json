@@ -1,5 +1,6 @@
 {
-	"philip.stenberg@arjo.com": "ps-publickey.asc",
+	"C-philip.stenberg@arjo.com": "ps-publickey.asc",
+	"PY-philip.stenberg@arjo.com": "Philip-publickey.asc",
 	"something@company.com": "something.asc",
 	"something.else@company.com": "something-else.asc"
 }
