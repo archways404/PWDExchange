@@ -24,16 +24,44 @@ void prompt_passphrase(char *buffer, size_t len) {
 }
 
 void paste_and_decrypt_loop(gpgme_ctx_t ctx) {
-  char buffer[8192];
+  char message[8192] = {0};
+  char *ptr = message;
+  size_t remaining = sizeof(message);
+
   while (1) {
-    printf("\nPaste PGP message (or 'exit' to quit):\n> ");
-    if (!fgets(buffer, sizeof(buffer), stdin))
-      break;
-    if (strncmp(buffer, "exit", 4) == 0)
-      break;
+    printf("\nPaste full PGP message (end with '-----END PGP MESSAGE-----') or "
+           "type 'exit'\n> ");
+
+    ptr = message;
+    remaining = sizeof(message);
+    int complete = 0;
+
+    while (fgets(ptr, remaining, stdin)) {
+      if (strncmp(ptr, "exit", 4) == 0)
+        return;
+
+      if (strstr(ptr, "-----END PGP MESSAGE-----")) {
+        complete = 1;
+        break;
+      }
+
+      size_t len = strlen(ptr);
+      ptr += len;
+      remaining -= len;
+
+      if (remaining <= 0) {
+        fprintf(stderr, "[ERROR] Message too long.\n");
+        return;
+      }
+    }
+
+    if (!complete) {
+      fprintf(stderr, "[ERROR] Incomplete message. Try again.\n");
+      continue;
+    }
 
     gpgme_data_t cipher, plain;
-    gpgme_data_new_from_mem(&cipher, buffer, strlen(buffer), 0);
+    gpgme_data_new_from_mem(&cipher, message, strlen(message), 0);
     gpgme_data_new(&plain);
 
     gpgme_error_t err = gpgme_op_decrypt(ctx, cipher, plain);
@@ -91,8 +119,9 @@ int main() {
     printf("[SUCCESS] Decrypted private key.\n");
 
     snprintf(cmd, sizeof(cmd),
-             "gpg --batch --quiet --pinentry-mode loopback --import %s",
-             TEMP_KEY_FILE);
+             "gpg --batch --quiet --pinentry-mode loopback --homedir '%s' "
+             "--import '%s'",
+             TEMP_GNUPGHOME, TEMP_KEY_FILE);
     system(cmd);
 
     paste_and_decrypt_loop(ctx);
